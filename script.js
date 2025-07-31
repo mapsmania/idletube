@@ -1,0 +1,143 @@
+ const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://mapsmania.github.io/tubememory/tubememorystyle.json',
+        center: [-0.1373209, 51.512258],
+        zoom: 12.5
+      });
+
+      map.on('load', () => {
+        const stations = [
+          ["Paddington", -0.1752, 51.5154],
+          ["Edgware Road", -0.16699, 51.520195],
+          ["Baker Street", -0.1586, 51.5226],
+          ["Great Portland Street", -0.1470, 51.5208],
+          ["Euston Square", -0.1355, 51.5260],
+          ["King's Cross St. Pancras", -0.1233, 51.5308],
+          ["Farringdon", -0.1050, 51.5202],
+          ["Barbican", -0.0984, 51.5204],
+          ["Moorgate", -0.0885, 51.5188],
+          ["Liverpool Street", -0.0814, 51.5176],
+          ["Aldgate", -0.0754, 51.5146],
+          ["Tower Hill", -0.0750, 51.5094],
+          ["Monument", -0.0881, 51.5115],
+          ["Cannon Street", -0.0901, 51.5112],
+          ["Mansion House", -0.0941, 51.5128],
+          ["Blackfriars", -0.1020, 51.5113],
+          ["Temple", -0.1149, 51.5114],
+          ["Embankment", -0.12195, 51.50717],
+          ["Westminster", -0.1246, 51.5018],
+          ["St. James's Park", -0.1313, 51.5021],
+          ["Victoria", -0.1439, 51.4965],
+          ["Sloane Square", -0.1564, 51.4925],
+          ["South Kensington", -0.1738, 51.4941],
+          ["Gloucester Road", -0.1748, 51.4945],
+          ["High Street Kensington", -0.1921, 51.5010],
+          ["Notting Hill Gate", -0.2031, 51.5090],
+          ["Bayswater", -0.1798, 51.5123],
+          ["Paddington", -0.1752, 51.5154],
+        ];
+
+        // Player initially owns Paddington
+        const ownedStationName = "Paddington";
+
+        const stationsGeojson = {
+          type: 'FeatureCollection',
+          features: stations.map(([name, lon, lat]) => ({
+            type: 'Feature',
+            properties: {
+              name,
+              owned: name === ownedStationName
+            },
+            geometry: { type: 'Point', coordinates: [lon, lat] }
+          }))
+        };
+
+        // Draw circle line FIRST (behind stations)
+        const coords = stations.map(s => [s[1], s[2]]);
+        const line = { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } };
+        map.addSource('circle-line', { type: 'geojson', data: line });
+        map.addLayer({
+          id: 'circle-line-path',
+          type: 'line',
+          source: 'circle-line',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#000', 'line-width': 1 }
+        });
+
+        // Add station circles
+        map.addSource('stations', { type: 'geojson', data: stationsGeojson });
+        map.addLayer({
+          id: 'station-circles',
+          type: 'circle',
+          source: 'stations',
+          paint: {
+            'circle-radius': 6,
+            'circle-color': [
+              'case',
+              ['==', ['get', 'owned'], true],
+              '#00FF00', // green for owned
+              '#FFD300'  // yellow otherwise
+            ],
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#000000'
+          }
+        });
+
+        // Create smooth path for train
+        const lineDistance = turf.length(line, { units: 'kilometers' });
+        const steps = 1000;
+        const path = [];
+        for (let i = 0; i <= steps; i++) {
+          const segment = turf.along(line, (lineDistance * i) / steps, { units: 'kilometers' });
+          path.push(segment.geometry.coordinates);
+        }
+
+        const marker = new maplibregl.Marker({ color: 'red' }).setLngLat(path[0]).addTo(map);
+
+        let position = 0;
+        let speed = 0.5;
+        const speedCap = 5;
+        let earnings = 0;
+        let speedUpgradeCost = 10;
+
+        const counterEl = document.getElementById('counter');
+        const speedDisplay = document.getElementById('speed-display');
+        const speedCostDisplay = document.getElementById('speed-cost');
+        const speedUpgradeBtn = document.getElementById('speed-upgrade-btn');
+
+        speedDisplay.textContent = speed.toFixed(1);
+        speedCostDisplay.textContent = speedUpgradeCost;
+
+        speedUpgradeBtn.addEventListener('click', () => {
+          if (earnings >= speedUpgradeCost && speed < speedCap) {
+            earnings -= speedUpgradeCost;
+            speed += 0.5;
+            speedUpgradeCost = Math.floor(speedUpgradeCost * 2);
+
+            counterEl.textContent = `Earnings: £${earnings}`;
+            speedDisplay.textContent = speed.toFixed(1);
+            speedCostDisplay.textContent = speedUpgradeCost;
+
+            if (speed >= speedCap) {
+              speed = speedCap;
+              speedUpgradeBtn.disabled = true;
+              speedUpgradeBtn.textContent = "Max Speed Reached";
+            }
+          }
+        });
+
+        function animateTrain() {
+          marker.setLngLat(path[Math.floor(position)]);
+          position += speed;
+          if (position >= path.length) {
+            position = 0;
+            earnings += 10; // Player earns only at their owned station
+            counterEl.textContent = `Earnings: £${earnings}`;
+          }
+
+          speedUpgradeBtn.disabled = earnings < speedUpgradeCost || speed >= speedCap;
+          requestAnimationFrame(animateTrain);
+        }
+
+        animateTrain();
+      });
